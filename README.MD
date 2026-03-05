@@ -5,7 +5,7 @@ An interactive web application built with **Gradio** that classifies skin lesion
 ## Features
 
 ✨ **Interactive Web Interface** - Upload skin lesion images with drag-and-drop support
-🤖 **AI-Powered Classification** - Uses EfficientNetV2 deep learning model
+🤖 **AI-Powered Classification** - Uses ResNet34 deep learning model
 📊 **Confidence Scores** - Shows classification probabilities for each lesion type
 ⚠️ **Risk Assessment** - Indicates whether a lesion is benign or potentially malignant
 📱 **Mobile-Friendly** - Works on desktop and mobile devices
