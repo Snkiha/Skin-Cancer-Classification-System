@@ -127,9 +127,14 @@ def analyze_lesion(image):
     except Exception as e:
         print(f"Grad-CAM error: {e}")
         visualization = image
+    
+    # Agreement Score
+    agreement_score = 1.0 - (np.std(probabilities) / 0.5) # Normalized
+    agreement_score = max(min(agreement_score, 1.0), 0.0)
 
     # Formatting Output
     res_md = f"## Primary Result: {label}\n### Confidence: **{conf*100:.1f}%**\n"
+    res_md += f"### Model Agreement: **{agreement_score*100:.1f}%**\n"
     res_md += "> ⚠️ **CLINICAL ADVISORY:** High-risk indicators detected." if is_malignant else "> ✅ **LOW RISK:** Typical benign features observed."
     
     # Ensure dict doesn't exceed detected classes
