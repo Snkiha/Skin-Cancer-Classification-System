@@ -128,16 +128,16 @@ def analyze_lesion(image):
         print(f"Grad-CAM error: {e}")
         visualization = image
     
-    # Agreement Score from all 5 folds of the model
+    # Agreement Score
     agreement_score = 1.0 - (np.std(probabilities) / 0.5) # Normalized
-    agreement_score = max(min(agreement_score, 1.0), 0.0) # Safety clamp to ensure the numeric value ranges between 0.0(0%) to 1.0(100%)
+    agreement_score = max(min(agreement_score, 1.0), 0.0)
 
     # Formatting Output
     res_md = f"## Primary Result: {label}\n### Confidence: **{conf*100:.1f}%**\n"
     res_md += f"### Model Agreement: **{agreement_score*100:.1f}%**\n"
-    res_md += "> **CLINICAL ADVISORY:** High-risk indicators detected." if is_malignant else "> **LOW RISK:** Typical benign features observed."
+    res_md += "> ⚠️ **CLINICAL ADVISORY:** High-risk indicators detected." if is_malignant else "> ✅ **LOW RISK:** Typical benign features observed."
     
-    # Ensure dict doesn't exceed detected classes (7 classes)
+    # Ensure dict doesn't exceed detected classes
     probs_dict = {LESION_CLASSES[i]: float(probabilities[i]) for i in range(min(len(probabilities), len(LESION_CLASSES)))}
     plot = create_plot(probs_dict)
     
@@ -145,7 +145,7 @@ def analyze_lesion(image):
 
 # --User Interface--
 with gr.Blocks(theme=gr.themes.Default(primary_hue="blue"), title="SkinGuard AI") as demo:
-    gr.Markdown("# AI Lesion Diagnostic Tool")
+    gr.Markdown("# 🏥 AI Lesion Diagnostic Tool")
     
     with gr.Row():
         with gr.Column(scale=1):
