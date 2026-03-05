@@ -135,7 +135,7 @@ def analyze_lesion(image):
     # Formatting Output
     res_md = f"## Primary Result: {label}\n### Confidence: **{conf*100:.1f}%**\n"
     res_md += f"### Model Agreement: **{agreement_score*100:.1f}%**\n"
-    res_md += "> ⚠️ **CLINICAL ADVISORY:** High-risk indicators detected." if is_malignant else "> ✅ **LOW RISK:** Typical benign features observed."
+    res_md += "> **CLINICAL ADVISORY:** High-risk indicators detected." if is_malignant else "> **LOW RISK:** Typical benign features observed."
     
     # Ensure dict doesn't exceed detected classes (7 classes)
     probs_dict = {LESION_CLASSES[i]: float(probabilities[i]) for i in range(min(len(probabilities), len(LESION_CLASSES)))}
@@ -145,7 +145,7 @@ def analyze_lesion(image):
 
 # --User Interface--
 with gr.Blocks(theme=gr.themes.Default(primary_hue="blue"), title="SkinGuard AI") as demo:
-    gr.Markdown("# 🏥 AI Lesion Diagnostic Tool")
+    gr.Markdown("# AI Lesion Diagnostic Tool")
     
     with gr.Row():
         with gr.Column(scale=1):
