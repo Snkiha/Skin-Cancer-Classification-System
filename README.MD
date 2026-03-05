@@ -61,8 +61,8 @@ This AI model is for **informational and educational purposes only**. It is not 
 ## Technical Stack
 
 - **Framework**: Gradio (interactive web interface)
-- **Model**: EfficientNetV2B0 (pre-trained)
-- **Backend**: TensorFlow/Keras
+- **Model**: ResNet34 (pre-trained)
+- **Backend**: PyTorch
 - **Image Processing**: PIL/Pillow, NumPy
 
 ## How It Works
