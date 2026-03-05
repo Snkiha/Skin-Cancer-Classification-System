@@ -4,11 +4,11 @@ An interactive web application built with **Gradio** that classifies skin lesion
 
 ## Features
 
-✨ **Interactive Web Interface** - Upload skin lesion images with drag-and-drop support
-🤖 **AI-Powered Classification** - Uses ResNet34 deep learning model
-📊 **Confidence Scores** - Shows classification probabilities for each lesion type
-⚠️ **Risk Assessment** - Indicates whether a lesion is benign or potentially malignant
-📱 **Mobile-Friendly** - Works on desktop and mobile devices
+- **Interactive Web Interface** - Upload skin lesion images with drag-and-drop support
+- **AI-Powered Classification** - Uses ResNet34 deep learning model
+- **Confidence Scores** - Shows classification probabilities for each lesion type
+- **Risk Assessment** - Indicates whether a lesion is benign or potentially malignant
+- **Mobile-Friendly** - Works on desktop and mobile devices
 
 ## Classified Lesion Types
 
@@ -50,7 +50,7 @@ The app will start and display a URL (usually `http://127.0.0.1:7860/`). Open th
 - Modern web browser (Chrome, Firefox, Safari, Edge)
 - Internet connection (for first-time model download)
 
-## ⚠️ Important Disclaimer
+## Important Disclaimer
 
 This AI model is for **informational and educational purposes only**. It is not a substitute for professional medical diagnosis. Always consult a qualified dermatologist for:
 
