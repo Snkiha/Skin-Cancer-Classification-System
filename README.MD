@@ -82,8 +82,8 @@ This AI model is for **informational and educational purposes only**. It is not 
 ## Troubleshooting
 
 ### Issue: Model loading fails
-- Solution: Ensure TensorFlow and dependencies are properly installed
-- Try: `pip install --upgrade tensorflow`
+- Solution: Ensure PyTorch and dependencies are properly installed
+- Try: `pip install --upgrade pytorch`
 
 ### Issue: Slow inference
 - Solution: This is normal on first run (model downloads ~100MB)
