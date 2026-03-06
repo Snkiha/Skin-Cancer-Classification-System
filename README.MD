@@ -1,6 +1,7 @@
-# Skin Lesion Classification AI Web App
+# Skin Lesion Classification AI System
 
-An interactive web application built with **Gradio** that classifies skin lesions using deep learning.
+- A Machine learning model for image classification with applications in skin cancer diagnosis.
+- An interactive web application built with **Gradio** that classifies skin lesions using deep learning.
 
 ## Features
 
