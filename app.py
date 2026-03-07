@@ -288,7 +288,7 @@ label, .label-wrap span {
 """
 
 # UI Layout 
-with gr.Blocks(css=css, title="SkinGuard AI") as demo:
+with gr.Blocks(css=css) as demo:
 
     # Header
     with gr.Group(elem_id="app-header"):
@@ -359,4 +359,4 @@ with gr.Blocks(css=css, title="SkinGuard AI") as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch(share=False)
+    demo.launch(share=True, title="SkinGuard AI")
