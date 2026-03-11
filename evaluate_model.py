@@ -25,7 +25,7 @@ def evaluate():
     
     results = []
     correct_count = 0
-    total_images = 50
+    total_images = 200
     
     # Selecting fixed 50 samples evenly distributed or random. Let's just pick the first 50 test samples.
     # To get a good mix, we can pick randomly using a fixed seed, or just first 50. First 50 might be heavily skewed to nv.
@@ -84,11 +84,7 @@ def evaluate():
         
     report_content += "\n## Analysis\n"
     report_content += "The external dataset consists of 28x28 images, while the model expects 224x224 input. A drop in performance compared to original resolution validation sets is expected due to upscaling interpolation artifacts, however, this serves as a baseline robust check for the model's feature extraction generalization on external downscaled samples.\n"
-    
-    with open("C:/Users/kisha/.gemini/antigravity/brain/f1789d37-8989-435f-b2d6-5262ef613491/model_evaluation_report.md", "w", encoding='utf-8') as f:
-        f.write(report_content)
-        
-    print("Report saved to artifacts directory.")
+
 
 if __name__ == '__main__':
     evaluate()
