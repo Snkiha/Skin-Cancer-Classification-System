@@ -359,4 +359,4 @@ with gr.Blocks(title="SkinGuard AI") as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch(share=True, debug=True, theme=gr.themes.Default(primary_hue="blue"), css=css)
+    demo.launch(share=True, theme=gr.themes.Default(primary_hue="blue"), css=css)
