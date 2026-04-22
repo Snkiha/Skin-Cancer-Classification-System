@@ -181,39 +181,70 @@ LESION_CLASSES = [
 ]
 
 
-def load_full_model():
+def _clean_state_dict(sd: dict) -> dict:
+    """Strip 'module.' / 'model.' prefixes added by DataParallel or custom wrappers."""
+    return {k.replace('module.', '').replace('model.', ''): v for k, v in sd.items()}
+
+
+def _build_model_from_state_dict(sd: dict) -> nn.Module:
+    """Detect number of classes from the state dict and return a loaded model."""
+    final_layer_key = "fc.4.weight" if "fc.4.weight" in sd else "fc.weight"
+    num_classes = sd[final_layer_key].shape[0] if final_layer_key in sd else len(LESION_CLASSES)
+    m = get_trained_architecture(num_classes=num_classes)
+    m.load_state_dict(_clean_state_dict(sd))
+    return m.to(device).eval()
+
+
+def load_ensemble() -> list:
+    """
+    Load all available fold weights from the checkpoint and return a list of
+    ready-to-use models (one per fold).
+
+    Supported checkpoint layouts
+    ────────────────────────────
+    1. {"state_dicts": {fold_name: state_dict, ...}}   ← dict of folds
+    2. {"state_dicts": [state_dict, ...]}               ← list of folds
+    3. {"fold_1": state_dict, "fold_2": ..., ...}       ← top-level fold keys
+    4. Plain state_dict (single model)                  ← fallback
+
+    If the file is missing, one randomly-initialised model is returned so the
+    app can still start and the UI remains functional.
+    """
     if not os.path.exists(MODEL_PATH):
-        print(f"{MODEL_PATH} not found. Loading architecture with random weights.")
-        return get_trained_architecture(len(LESION_CLASSES)).to(device).eval()
+        print(f"[ensemble] {MODEL_PATH} not found — using 1 random-weight model.")
+        return [get_trained_architecture(len(LESION_CLASSES)).to(device).eval()]
 
     checkpoint = torch.load(MODEL_PATH, map_location=device)
-    state_dict = None
+    fold_state_dicts = []
 
     if isinstance(checkpoint, dict):
+        # Layout 1 – nested under "state_dicts"
         if "state_dicts" in checkpoint:
             inner = checkpoint["state_dicts"]
             if isinstance(inner, dict):
-                state_dict = next(iter(inner.values()))
+                fold_state_dicts = list(inner.values())
             elif isinstance(inner, list):
-                state_dict = inner[0]
-        elif "fold_1" in checkpoint:
-            state_dict = checkpoint["fold_1"]
+                fold_state_dicts = inner
+
+        # Layout 3 – top-level "fold_N" keys
+        elif any(k.startswith("fold_") for k in checkpoint.keys()):
+            fold_keys = sorted(k for k in checkpoint.keys() if k.startswith("fold_"))
+            fold_state_dicts = [checkpoint[k] for k in fold_keys]
+
+        # Layout 4 – plain state dict (single model)
         elif any("fc.4.weight" in k or "fc.weight" in k for k in checkpoint.keys()):
-            state_dict = checkpoint
+            fold_state_dicts = [checkpoint]
 
-    if state_dict is None:
-        raise RuntimeError("Could not find a valid state_dict in the checkpoint file.")
+    if not fold_state_dicts:
+        raise RuntimeError("Could not find any valid state_dict(s) in the checkpoint file.")
 
-    final_layer_key = "fc.4.weight" if "fc.4.weight" in state_dict else "fc.weight"
-    detected_classes = state_dict[final_layer_key].shape[0] if final_layer_key in state_dict else len(LESION_CLASSES)
-
-    model = get_trained_architecture(num_classes=detected_classes)
-    clean_state_dict = {k.replace('module.', '').replace('model.', ''): v for k, v in state_dict.items()}
-    model.load_state_dict(clean_state_dict)
-    return model.to(device).eval()
+    ensemble = [_build_model_from_state_dict(sd) for sd in fold_state_dicts]
+    print(f"[ensemble] Loaded {len(ensemble)} fold model(s) from {MODEL_PATH}.")
+    return ensemble
 
 
-model = load_full_model()
+# Load all folds at startup — list of nn.Module, each in eval() mode
+ensemble_models = load_ensemble()
 
 test_transforms = transforms.Compose([
     transforms.Resize((224, 224)),
@@ -274,8 +305,7 @@ def create_preprocessing_figure(original_rgb, hair_removed_rgb, segmented_rgb, h
             ax.imshow(img, cmap='gray', vmin=0, vmax=255)
         else:
             ax.imshow(img)
-        ax.set_title(title, color='#555e6e', fontfamily='monospace', fontsize=8,
-                     letter_spacing=1, pad=6)
+        ax.set_title(title, color='#555e6e', fontfamily='monospace', fontsize=8, pad=6)
         ax.axis('off')
 
     plt.tight_layout(pad=1.0)
@@ -326,33 +356,47 @@ def analyze_lesion(image, use_hair_removal, use_hsv_segmentation):
         original_rgb, hair_removed_rgb, segmented_rgb, hair_mask
     )
 
-    # ---- Model inference ---------------------------------------------------
+    # ---- Ensemble inference (all folds) ------------------------------------
     pil_img      = Image.fromarray(inference_input).convert('RGB')
     input_tensor = test_transforms(pil_img).unsqueeze(0).to(device)
 
+    fold_probs = []  # shape per fold: (num_classes,)
     with torch.no_grad():
-        output        = model(input_tensor)
-        probabilities = torch.softmax(output, dim=1)[0].cpu().numpy()
+        for fold_model in ensemble_models:
+            output = fold_model(input_tensor)
+            probs  = torch.softmax(output, dim=1)[0].cpu().numpy()
+            fold_probs.append(probs)
+
+    fold_probs_arr = np.stack(fold_probs, axis=0)          # (num_folds, num_classes)
+    probabilities  = fold_probs_arr.mean(axis=0)            # averaged ensemble prediction
 
     top_idx = int(np.argmax(probabilities))
     conf    = probabilities[top_idx]
     label   = LESION_CLASSES[top_idx] if top_idx < len(LESION_CLASSES) else f"Class {top_idx}"
     is_malignant = any(risk in label for risk in ["Malignant", "Carcinoma", "Actinic"])
 
-    # ---- Grad-CAM ----------------------------------------------------------
-    target_layers = [model.layer4[-1]]
+    # Real fold agreement: 1 − mean std across all classes over all folds.
+    # High agreement → folds agree on the probability of every class.
+    # Low agreement  → folds disagree (model is uncertain).
+    per_class_std   = fold_probs_arr.std(axis=0)            # (num_classes,)
+    mean_std        = float(per_class_std.mean())
+    # Normalise: max possible mean std for K classes ≈ 0.5 / sqrt(K)
+    # We use a simple linear scale capped to [0, 1]
+    agreement_score = max(0.0, min(1.0, 1.0 - mean_std / 0.5))
+
+    # ---- Grad-CAM (run on first fold model for speed) ----------------------
+    cam_model     = ensemble_models[0]
+    target_layers = [cam_model.layer4[-1]]
     targets       = [ClassifierOutputTarget(top_idx)]
     rgb_float     = np.array(pil_img.resize((224, 224))).astype(np.float32) / 255.0
 
     try:
-        with GradCAM(model=model, target_layers=target_layers) as cam:
+        with GradCAM(model=cam_model, target_layers=target_layers) as cam:
             grayscale_cam = cam(input_tensor=input_tensor, targets=targets)[0, :]
             visualization = show_cam_on_image(rgb_float, grayscale_cam, use_rgb=True)
     except Exception as e:
         print(f"Grad-CAM error: {e}")
         visualization = inference_input
-
-    agreement_score = max(min(1.0 - (np.std(probabilities) / 0.5), 1.0), 0.0)
 
     # ---- Result HTML -------------------------------------------------------
     risk_icon   = "🔴" if is_malignant else "🟢"
@@ -393,7 +437,7 @@ def analyze_lesion(image, use_hair_removal, use_hsv_segmentation):
       <div style="color:#00c8ff;font-size:26px;font-weight:700;">{conf*100:.1f}<span style="font-size:14px;color:#555">%</span></div>
     </div>
     <div>
-      <div style="color:#555e6e;font-size:10px;letter-spacing:1.5px;">MODEL AGREEMENT</div>
+      <div style="color:#555e6e;font-size:10px;letter-spacing:1.5px;">FOLD AGREEMENT ({len(ensemble_models)} folds)</div>
       <div style="color:#a8b2c1;font-size:26px;font-weight:700;">{agreement_score*100:.1f}<span style="font-size:14px;color:#555">%</span></div>
     </div>
   </div>
@@ -420,7 +464,7 @@ css = """
 body, .gradio-container {
     background: #080c12 !important;
     color: #c9d1d9 !important;
-    font-family: 'Inter', sans-serif !important;
+    font-family: 'Space Mono', monospace !important;
 }
 .gr-box, .gr-form { box-shadow: none !important; }
 
@@ -523,7 +567,7 @@ with gr.Blocks(title="SkinGuard AI") as demo:
     with gr.Group(elem_id="app-header"):
         gr.HTML("""
         <h1>⬡ SKINGUARD AI</h1>
-        <p>DERMOSCOPIC LESION ANALYSIS · RESNET-34 · GRAD-CAM · DULLRAZOR · HSV SEGMENTATION</p>
+        <p>DERMOSCOPIC LESION ANALYSIS · RESNET-34 ENSEMBLE · GRAD-CAM · DULLRAZOR · HSV SEGMENTATION</p>
         """)
 
     # Main workspace
@@ -560,6 +604,7 @@ with gr.Blocks(title="SkinGuard AI") as demo:
                         border-radius:8px;padding:14px 16px;font-family:'Space Mono',monospace;font-size:10px;color:#3d444d;line-height:1.9;">
               <span style="color:#555e6e;">ℹ MODEL INFO</span><br>
               Architecture · ResNet-34<br>
+              Inference &nbsp;&nbsp;· 5-fold ensemble<br>
               Classes &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;· 7 lesion types<br>
               Input &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;· 224 × 224 px<br>
               XAI &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;· Gradient-CAM<br>
@@ -599,8 +644,8 @@ with gr.Blocks(title="SkinGuard AI") as demo:
     # Disclaimer
     gr.HTML("""
     <div id="disclaimer">
-      FOR RESEARCH AND EDUCATIONAL USE ONLY · NOT A SUBSTITUTE FOR PROFESSIONAL MEDICAL DIAGNOSIS ·
-      ALWAYS CONSULT A QUALIFIED DERMATOLOGIST
+    FOR RESEARCH AND EDUCATIONAL USE ONLY · NOT A SUBSTITUTE FOR PROFESSIONAL MEDICAL DIAGNOSIS ·
+    ALWAYS CONSULT A QUALIFIED DERMATOLOGIST
     </div>
     """)
 
