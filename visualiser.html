@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SkinGuard AI — Auto-Run Pipeline</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:           #0d1117;
+    --surface:      #161b22;
+    --surface2:     #21262d;
+    --border:       #30363d;
+    --text:         #e6edf3;
+    --muted:        #8b949e;
+    --dim:          #555e6e;
+    --blue:         #378ADD;
+    --blue-bg:      #0c2d4e;
+    --blue-border:  #1a4a7a;
+    --green:        #3fb950;
+    --green-bg:     #0a2d0e;
+    --green-border: #1a5c22;
+    --red:          #f85149;
+    --red-bg:       #3d0f0f;
+    --font:         'Space Mono', 'Courier New', monospace;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+    padding: 28px 20px 48px;
+  }
+
+  .wrapper { max-width: 560px; margin: 0 auto; }
+
+  header { margin-bottom: 24px; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+  header h1 { font-size: 17px; font-weight: 700; }
+  header p  { font-size: 14px; color: var(--dim); letter-spacing: 1px; margin-top: 4px; }
+
+  @keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.35;transform:scale(0.6)} }
+  @keyframes stage-pop { 0%{opacity:0.25} 100%{opacity:1} }
+  @keyframes result-in { 0%{opacity:0;transform:translateY(10px)} 100%{opacity:1;transform:translateY(0)} }
+  @keyframes flow-pulse { 0%,100%{opacity:0.3} 50%{opacity:1} }
+
+  .stage-pop { animation: stage-pop 0.2s ease-out both; }
+  .result-in { animation: result-in 0.3s ease-out both; }
+
+  #run-btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 11px 26px; font-size: 12px; font-weight: 700;
+    font-family: var(--font); letter-spacing: 1.2px;
+    cursor: pointer; border-radius: 8px;
+    border: 1px solid var(--blue);
+    background: transparent; color: var(--blue);
+    transition: background 0.15s, transform 0.1s;
+    margin-bottom: 28px;
+  }
+  #run-btn:hover  { background: var(--blue-bg); }
+  #run-btn:active { transform: scale(0.97); }
+  #run-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+  #pipeline { display: flex; flex-direction: column; align-items: stretch; }
+
+  .stage-wrap { display: flex; flex-direction: column; align-items: center; }
+
+  .stage-box {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 13px 16px;
+    background: var(--surface);
+    transition: border-color 0.2s, background 0.2s, opacity 0.25s;
+  }
+  .stage-box.idle   { opacity: 0.38; }
+  .stage-box.active { border-color: var(--blue-border); background: var(--blue-bg); opacity: 1; }
+  .stage-box.done   { border-color: var(--green-border); background: var(--surface); opacity: 1; }
+
+  .stage-header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+    background: var(--border); transition: background 0.2s;
+  }
+  .dot.pulsing { background: var(--blue); animation: pulse-dot 0.75s ease-in-out infinite; }
+  .dot.done    { background: var(--green); animation: none; }
+
+  .stage-label  { font-size: 14px; font-weight: 700; color: var(--text); }
+  .stage-sub    { font-size: 12px; color: var(--muted); line-height: 1.55; padding-left: 19px; }
+  .stage-status { font-size: 12px; color: var(--dim); margin-top: 5px; padding-left: 19px; min-height: 14px; }
+
+  /* Connector: vertical line + downward triangle arrowhead */
+  .v-connector {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+  .v-line {
+    width: 2px;
+    height: 20px;
+    background: var(--border);
+    transition: background 0.25s;
+  }
+  /* CSS downward triangle */
+  .v-arrow {
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid var(--border);
+    transition: border-top-color 0.25s;
+  }
+  .v-connector.flowing   .v-line  { background: var(--blue); animation: flow-pulse 0.6s ease-in-out infinite; }
+  .v-connector.flowing   .v-arrow { border-top-color: var(--blue); }
+  .v-connector.done-flow .v-line  { background: var(--green); animation: none; }
+  .v-connector.done-flow .v-arrow { border-top-color: var(--green); }
+
+  /* spacing above/below connector */
+  .v-connector { margin: 6px 0; }
+
+  .fold-chips { display: flex; gap: 5px; margin-top: 7px; padding-left: 19px; flex-wrap: wrap; }
+  .fold-chip {
+    font-size: 9px; padding: 2px 7px; font-family: var(--font);
+    border-radius: 4px;
+    background: var(--surface2); color: var(--muted);
+    border: 1px solid var(--border);
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .fold-chip.active { background: var(--blue-bg);  color: var(--blue);  border-color: var(--blue-border); }
+  .fold-chip.done   { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
+
+  .result-card {
+    display: none;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    background: var(--surface);
+    margin-top: 8px;
+  }
+  .result-card.visible { display: block; }
+
+  .risk-banner {
+    border-left: 3px solid var(--red);
+    border-radius: 0;
+    background: var(--red-bg);
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    font-size: 11px;
+    color: var(--red);
+    line-height: 1.6;
+  }
+
+  .metrics-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 18px; }
+  .metric-box   { background: var(--surface2); border-radius: 7px; padding: 11px 12px; }
+  .metric-label { font-size: 9px; color: var(--dim); letter-spacing: 0.8px; margin-bottom: 4px; }
+  .metric-val   { font-size: 22px; font-weight: 700; color: var(--text); }
+
+  .section-label { font-size: 9px; color: var(--dim); letter-spacing: 1.2px; margin-bottom: 10px; }
+
+  .prob-row    { margin-bottom: 9px; }
+  .prob-header { display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 3px; }
+  .prob-name   { color: var(--muted); }
+  .prob-pct    { font-weight: 700; color: var(--text); }
+  .bar-track   { background: var(--surface2); border-radius: 3px; height: 5px; overflow: hidden; }
+  .bar-fill    { height: 100%; border-radius: 3px; width: 0%; transition: width 0.65s cubic-bezier(.4,0,.2,1); }
+
+  footer {
+    margin-top: 32px; padding-top: 14px;
+    border-top: 1px solid var(--border);
+    font-size: 9px; color: var(--dim);
+    letter-spacing: 0.5px; text-align: center; line-height: 1.8;
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <header>
+    <h1>⬡ SKINGUARD AI</h1>
+    <p>PREDICTION PIPELINE · AUTO-RUN VISUALIZER · RESNET-34 · 5-FOLD ENSEMBLE · GRAD-CAM</p>
+  </header>
+
+  <button id="run-btn" onclick="runPipeline()">
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+      <polygon points="2,1 12,6.5 2,12" fill="currentColor"/>
+    </svg>
+    RUN ANALYSIS
+  </button>
+
+  <div id="pipeline"></div>
+
+  <div id="result-card" class="result-card">
+    <div id="risk-banner" class="risk-banner"></div>
+    <div class="metrics-grid">
+      <div class="metric-box">
+        <div class="metric-label">CONFIDENCE</div>
+        <div id="res-conf" class="metric-val"></div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label">FOLD AGREEMENT</div>
+        <div id="res-agree" class="metric-val"></div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label">FOLDS RUN</div>
+        <div class="metric-val">5</div>
+      </div>
+    </div>
+    <div class="section-label">PROBABILITY DISTRIBUTION</div>
+    <div id="prob-bars"></div>
+  </div>
+
+  <footer>
+    FOR RESEARCH AND EDUCATIONAL USE ONLY · NOT A SUBSTITUTE FOR PROFESSIONAL MEDICAL DIAGNOSIS<br>
+    ALWAYS CONSULT A QUALIFIED DERMATOLOGIST
+  </footer>
+
+</div>
+
+<script>
+const STAGES = [
+  { label: 'Input image',                  sub: 'Load RGB array · preserve original resolution',                                        dur: 600,  folds: false },
+  { label: 'DullRazor — hair removal',     sub: 'Black-hat transform (17×17 kernel) · Otsu threshold · Telea inpainting',              dur: 950,  folds: false },
+  { label: 'HSV lesion segmentation',      sub: 'Saturation + value threshold · morphological close/open · largest component · blend',  dur: 1050, folds: false },
+  { label: 'ResNet-34 ensemble inference', sub: 'Resize 224×224 · ImageNet normalise · 5-fold forward pass',                           dur: 1400, folds: true  },
+  { label: 'Softmax averaging',            sub: 'Per-fold softmax · element-wise average · compute std for agreement score',            dur: 700,  folds: false },
+  { label: 'Grad-CAM heatmap',             sub: 'Global avg-pool · upsample to 224×224 · overlay',       dur: 820,  folds: false },
+  { label: 'Diagnosis output',             sub: 'Argmax · risk classification · confidence · fold agreement · result card',             dur: 480,  folds: false },
+];
+
+const CLASSES = [
+  { name: 'Melanoma (Malignant)',             p: 0.62, risk: true  },
+  { name: 'Actinic Keratosis / IEC',          p: 0.18, risk: true  },
+  { name: 'Basal Cell Carcinoma (Malignant)', p: 0.09, risk: true  },
+  { name: 'Melanocytic Nevus',                p: 0.06, risk: false },
+  { name: 'Benign Keratosis',                 p: 0.03, risk: false },
+  { name: 'Dermatofibroma',                   p: 0.01, risk: false },
+  { name: 'Vascular Lesion',                  p: 0.01, risk: false },
+];
+
+let running = false;
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function buildPipeline() {
+  const wrap = document.getElementById('pipeline');
+  wrap.innerHTML = '';
+
+  STAGES.forEach((s, i) => {
+    const stageWrap = document.createElement('div');
+    stageWrap.className = 'stage-wrap';
+
+    /* Stage box */
+    const box = document.createElement('div');
+    box.className = 'stage-box idle';
+    box.id = 'box-' + i;
+
+    const header = document.createElement('div');
+    header.className = 'stage-header';
+
+    const dot = document.createElement('div');
+    dot.className = 'dot';
+    dot.id = 'dot-' + i;
+
+    const labelEl = document.createElement('div');
+    labelEl.className = 'stage-label';
+    labelEl.textContent = s.label;
+
+    header.appendChild(dot);
+    header.appendChild(labelEl);
+
+    const subEl = document.createElement('div');
+    subEl.className = 'stage-sub';
+    subEl.textContent = s.sub;
+
+    const statusEl = document.createElement('div');
+    statusEl.className = 'stage-status';
+    statusEl.id = 'status-' + i;
+
+    box.appendChild(header);
+    box.appendChild(subEl);
+
+    if (s.folds) {
+      const fc = document.createElement('div');
+      fc.className = 'fold-chips';
+      for (let f = 1; f <= 5; f++) {
+        const ch = document.createElement('div');
+        ch.className = 'fold-chip';
+        ch.id = 'fold-' + i + '-' + f;
+        ch.textContent = 'fold ' + f;
+        fc.appendChild(ch);
+      }
+      box.appendChild(fc);
+    }
+
+    box.appendChild(statusEl);
+    stageWrap.appendChild(box);
+
+    /* Downward connector between stages */
+    if (i < STAGES.length - 1) {
+      const vc = document.createElement('div');
+      vc.className = 'v-connector';
+      vc.id = 'conn-' + i;
+
+      const line = document.createElement('div');
+      line.className = 'v-line';
+      line.id = 'vline-' + i;
+
+      const arrow = document.createElement('div');
+      arrow.className = 'v-arrow';
+      arrow.id = 'varrow-' + i;
+
+      vc.appendChild(line);
+      vc.appendChild(arrow);
+      stageWrap.appendChild(vc);
+    }
+
+    wrap.appendChild(stageWrap);
+  });
+}
+
+async function runPipeline() {
+  if (running) return;
+  running = true;
+
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  buildPipeline();
+  document.getElementById('result-card').classList.remove('visible');
+
+  for (let i = 0; i < STAGES.length; i++) {
+    const s      = STAGES[i];
+    const box    = document.getElementById('box-' + i);
+    const dot    = document.getElementById('dot-' + i);
+    const status = document.getElementById('status-' + i);
+
+    if (i > 0) {
+      const conn = document.getElementById('conn-' + (i - 1));
+      if (conn) conn.className = 'v-connector flowing';
+    }
+
+    box.className = 'stage-box active stage-pop';
+    dot.className = 'dot pulsing';
+    status.textContent = 'processing…';
+
+    if (s.folds) {
+      status.textContent = '';
+      for (let f = 1; f <= 5; f++) {
+        const chip = document.getElementById('fold-' + i + '-' + f);
+        if (chip) chip.className = 'fold-chip active';
+        await sleep(s.dur / 5);
+        if (chip) chip.className = 'fold-chip done';
+      }
+    } else {
+      await sleep(s.dur);
+    }
+
+    box.className = 'stage-box done stage-pop';
+    dot.className = 'dot done';
+    status.textContent = 'done';
+
+    if (i > 0) {
+      const conn = document.getElementById('conn-' + (i - 1));
+      if (conn) conn.className = 'v-connector done-flow';
+    }
+  }
+
+  await sleep(200);
+  showResult();
+  running = false;
+  btn.disabled = false;
+  btn.innerHTML = `
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+      <polygon points="2,1 12,6.5 2,12" fill="currentColor"/>
+    </svg>
+    RUN AGAIN`;
+}
+
+function showResult() {
+  const top  = CLASSES[0];
+  const card = document.getElementById('result-card');
+  card.classList.add('visible', 'result-in');
+
+  const banner = document.getElementById('risk-banner');
+  banner.textContent = top.risk
+    ? '⚠  HIGH RISK — ' + top.name + ' detected. Clinical review strongly advised.'
+    : '✓  LOW RISK — ' + top.name + '. Typical benign features observed.';
+  banner.style.borderColor = top.risk ? 'var(--red)'    : 'var(--green)';
+  banner.style.background  = top.risk ? 'var(--red-bg)' : 'var(--green-bg)';
+  banner.style.color       = top.risk ? 'var(--red)'    : 'var(--green)';
+
+  document.getElementById('res-conf').textContent  = Math.round(top.p * 100) + '%';
+  document.getElementById('res-agree').textContent = '88%';
+
+  const bars = document.getElementById('prob-bars');
+  bars.innerHTML = '';
+  CLASSES.forEach(c => {
+    const pct = Math.round(c.p * 100);
+    const row = document.createElement('div');
+    row.className = 'prob-row';
+    row.innerHTML = `
+      <div class="prob-header">
+        <span class="prob-name">${c.name}</span>
+        <span class="prob-pct">${pct}%</span>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill" style="background:${c.risk ? 'var(--red)' : 'var(--blue)'}"></div>
+      </div>`;
+    bars.appendChild(row);
+    setTimeout(() => {
+      const fill = row.querySelector('.bar-fill');
+      if (fill) fill.style.width = pct + '%';
+    }, 60);
+  });
+}
+
+buildPipeline();
+</script>
+</body>
+</html>
